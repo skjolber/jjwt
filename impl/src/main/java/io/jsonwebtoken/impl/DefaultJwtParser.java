@@ -42,6 +42,7 @@ import io.jsonwebtoken.impl.crypto.JwtSignatureValidator;
 import io.jsonwebtoken.impl.io.InstanceLocator;
 import io.jsonwebtoken.io.Decoder;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.io.DecodingException;
 import io.jsonwebtoken.io.DeserializationException;
 import io.jsonwebtoken.io.Deserializer;
 import io.jsonwebtoken.lang.Assert;
@@ -217,6 +218,11 @@ public class DefaultJwtParser implements JwtParser {
         return false;
     }
 
+    private static void malformed(String type, String part) {
+        String msg = "Required " + type + " " + part + " is missing.";
+        throw new MalformedJwtException(msg);
+    }
+
     @Override
     public Jwt parse(String jwt) throws ExpiredJwtException, MalformedJwtException, SignatureException {
 
@@ -229,9 +235,16 @@ public class DefaultJwtParser implements JwtParser {
 
         Assert.hasText(jwt, "JWT String argument cannot be null or empty.");
 
-        String base64UrlEncodedHeader = null;
-        String base64UrlEncodedPayload = null;
-        String base64UrlEncodedDigest = null;
+        //parse the constituent parts of the compact string:
+        String base64UrlEncodedHeader = null; //JWS or JWE
+
+        String base64UrlEncodedCek = null; //JWE only
+        String base64UrlEncodedPayload = null; //JWS or JWE
+
+        String base64UrlEncodedIv = null; //JWE only
+
+        String base64UrlEncodedTag = null; //JWE only
+        String base64UrlEncodedDigest = null; //JWS only
 
         int delimiterCount = 0;
 
@@ -239,15 +252,31 @@ public class DefaultJwtParser implements JwtParser {
 
         for (char c : jwt.toCharArray()) {
 
+            if (Character.isWhitespace(c)) {
+                String msg = "Compact JWT strings cannot contain whitespace.";
+                throw new MalformedJwtException(msg);
+            }
+
             if (c == SEPARATOR_CHAR) {
 
                 CharSequence tokenSeq = Strings.clean(sb);
                 String token = tokenSeq != null ? tokenSeq.toString() : null;
 
-                if (delimiterCount == 0) {
-                    base64UrlEncodedHeader = token;
-                } else if (delimiterCount == 1) {
-                    base64UrlEncodedPayload = token;
+                switch (delimiterCount) {
+                    case 0:
+                        base64UrlEncodedHeader = token;
+                        break;
+                    case 1:
+                        //we'll figure out if we have a compact JWE or JWS after finishing inspecting the char array:
+                        base64UrlEncodedCek = token;
+                        base64UrlEncodedPayload = token;
+                        break;
+                    case 2:
+                        base64UrlEncodedIv = token;
+                        break;
+                    case 3:
+                        base64UrlEncodedPayload = token; //ciphertext
+                        break;
                 }
 
                 delimiterCount++;
@@ -257,39 +286,67 @@ public class DefaultJwtParser implements JwtParser {
             }
         }
 
-        if (delimiterCount != 2) {
-            String msg = "JWT strings must contain exactly 2 period characters. Found: " + delimiterCount;
+        boolean jwe;
+        if (delimiterCount == 2) { // JWT or JWS
+            //noinspection ConstantConditions
+            jwe = false;
+        } else if (delimiterCount == 4) { // JWE
+            jwe = true;
+        } else {
+            String msg = "Invalid compact JWT string. JWSs must have exactly 2 period characters, " +
+                "JWEs must have exactly 4. Found: " + delimiterCount + ".";
             throw new MalformedJwtException(msg);
         }
+
+        String type = jwe ? "JWE" : "JWS";
+
         if (sb.length() > 0) {
-            base64UrlEncodedDigest = sb.toString();
+            String value = sb.toString();
+            if (jwe) {
+                base64UrlEncodedTag = value;
+            } else {
+                base64UrlEncodedDigest = value;
+            }
+        }
+
+        if (base64UrlEncodedHeader == null) {
+            malformed(type, "Protected Header");
         }
 
         if (base64UrlEncodedPayload == null) {
-            throw new MalformedJwtException("JWT string '" + jwt + "' is missing a body/payload.");
+            malformed(type, jwe ? "Ciphertext" : "Payload");
+        }
+
+        if (jwe) {
+            if (base64UrlEncodedIv == null) {
+                malformed(type, "Initialization Vector");
+            }
+            if (base64UrlEncodedTag == null) {
+                malformed(type, "Authentication Tag");
+            }
         }
 
         // =============== Header =================
-        Header header = null;
+        Header header;
 
-        CompressionCodec compressionCodec = null;
+        CompressionCodec compressionCodec;
 
-        if (base64UrlEncodedHeader != null) {
-            byte[] bytes = base64UrlDecoder.decode(base64UrlEncodedHeader);
-            String origValue = new String(bytes, Strings.UTF_8);
-            Map<String, Object> m = (Map<String, Object>) readValue(origValue);
+        byte[] bytes = base64UrlDecode(base64UrlEncodedHeader);
+        String origValue = new String(bytes, Strings.UTF_8);
+        Map<String, Object> m = (Map<String, Object>) readValue(origValue);
 
-            if (base64UrlEncodedDigest != null) {
-                header = new DefaultJwsHeader(m);
-            } else {
-                header = new DefaultHeader(m);
-            }
-
-            compressionCodec = compressionCodecResolver.resolveCompressionCodec(header);
+        if (base64UrlEncodedDigest != null) {
+            header = new DefaultJwsHeader(m);
+        } else if (jwe) {
+            header = new DefaultJweHeader(m);
+        } else {
+            header = new DefaultHeader(m);
         }
 
+        compressionCodec = compressionCodecResolver.resolveCompressionCodec(header);
+
         // =============== Body =================
-        byte[] bytes = base64UrlDecoder.decode(base64UrlEncodedPayload);
+        bytes = base64UrlDecoder.decode(base64UrlEncodedPayload);
         if (compressionCodec != null) {
             bytes = compressionCodec.decompress(bytes);
         }
@@ -309,11 +366,9 @@ public class DefaultJwtParser implements JwtParser {
 
             SignatureAlgorithm algorithm = null;
 
-            if (header != null) {
-                String alg = jwsHeader.getAlgorithm();
-                if (Strings.hasText(alg)) {
-                    algorithm = SignatureAlgorithm.forName(alg);
-                }
+            String alg = jwsHeader.getAlgorithm();
+            if (Strings.hasText(alg)) {
+                algorithm = SignatureAlgorithm.forName(alg);
             }
 
             if (algorithm == null || algorithm == SignatureAlgorithm.NONE) {
@@ -576,6 +631,15 @@ public class DefaultJwtParser implements JwtParser {
                 return jws;
             }
         });
+    }
+
+    protected byte[] base64UrlDecode(String base64UrlEncoded) {
+        try {
+            return base64UrlDecoder.decode(base64UrlEncoded);
+        } catch (DecodingException e) {
+            String msg = "Invalid Base64Url string: " + base64UrlEncoded;
+            throw new MalformedJwtException(msg, e);
+        }
     }
 
     @SuppressWarnings("unchecked")

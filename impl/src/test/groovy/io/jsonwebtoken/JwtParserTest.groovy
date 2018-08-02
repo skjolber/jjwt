@@ -1512,7 +1512,8 @@ class JwtParserTest {
             Jwts.parser().setSigningKey(randomKey()).parse(bad)
             fail()
         } catch (MalformedJwtException se) {
-            assertEquals 'JWT strings must contain exactly 2 period characters. Found: 3', se.message
+            assertEquals 'Invalid compact JWT string. JWSs must have exactly 2 period characters, JWEs must have ' +
+                    'exactly 4. Found: 3.', se.message
         }
     }
 
@@ -1523,10 +1524,13 @@ class JwtParserTest {
 
         String jwtStr = '.' + base64Url(payload) + '.'
 
-        Jwt jwt = Jwts.parser().parse(jwtStr)
+        try {
+            Jwts.parser().parse(jwtStr)
+            fail()
+        } catch (MalformedJwtException expected) {
+            assertEquals 'Required JWS Protected Header is missing.', expected.getMessage()
 
-        assertTrue jwt.header == null
-        assertEquals 'Joe', jwt.body.get('subject')
+        }
     }
 
     @Test
@@ -1542,7 +1546,7 @@ class JwtParserTest {
             Jwts.parser().parse(jwtStr)
             fail()
         } catch (MalformedJwtException se) {
-            assertEquals 'JWT string has a digest/signature, but the header does not reference a valid signature algorithm.', se.message
+            assertEquals 'Required JWS Protected Header is missing.', se.message
         }
     }
 
