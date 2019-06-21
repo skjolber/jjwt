@@ -15,8 +15,7 @@
  */
 package io.jsonwebtoken;
 
-import io.jsonwebtoken.factory.CompressionCodecFactory;
-import io.jsonwebtoken.factory.FactoryLoader;
+import io.jsonwebtoken.lang.Services;
 
 /**
  * Provides default implementations of the {@link CompressionCodec} interface.
@@ -27,7 +26,7 @@ import io.jsonwebtoken.factory.FactoryLoader;
  */
 public final class CompressionCodecs {
 
-    private static final CompressionCodecFactory FACTORY = FactoryLoader.loadCompressionCodecFactory();
+    private static final CompressionCodecFactory FACTORY = Services.loadFirst(CompressionCodecFactory.class);
 
     private CompressionCodecs() {
     } //prevent external instantiation
