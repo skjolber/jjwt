@@ -1,5 +1,11 @@
 ## Release Notes
 
+### 0.11.0
+
+This is a minor version release that adds [Google's Gson](https://github.com/google/gson) as a natively supported
+JSON parser. Installation instructions have been updated and new
+[JJWT Gson usage guidelines](https://github.com/jwtk/jjwt#json-gson) have been added.
+
 ### 0.10.7
 
 This patch release:
