@@ -28,9 +28,9 @@ import static org.junit.Assert.*
 
 class RuntimeClasspathDeserializerLocatorTest {
 
-    private static final String TEST_SERVICE_DESCRIPTOR = "io.jsonwebtoken.io.Deserializer.test.orgjson"
+    private static final String TEST_SERVICE_DESCRIPTOR_ORGJSON = "io.jsonwebtoken.io.Deserializer.test.orgjson"
 
-    private ClassLoader originalClassLoader
+    private static final String TEST_SERVICE_DESCRIPTOR_GSON = "io.jsonwebtoken.io.Deserializer.test.gson"
 
     @Before
     void setUp() {
@@ -40,25 +40,17 @@ class RuntimeClasspathDeserializerLocatorTest {
     @After
     void teardown() {
         RuntimeClasspathDeserializerLocator.DESERIALIZER.set(null)
-        restoreOriginalClassLoader()
-    }
-
-    private void restoreOriginalClassLoader() {
-        if(originalClassLoader != null) {
-            Thread.currentThread().setContextClassLoader(originalClassLoader)
-            originalClassLoader = null
-        }
     }
 
     @Test
     void testClassIsNotAvailable() {
-        prepareNoServiceDescriptorClassLoader()
-
-        try {
-            new RuntimeClasspathDeserializerLocator().getInstance()
-            fail 'Located Deserializer class, whereas none was expected.'
-        } catch (Exception ex) {
-            assertEquals 'Unable to discover any JSON Deserializer implementations on the classpath.', ex.message
+        NoServiceDescriptorClassLoader.runWith {
+            try {
+                new RuntimeClasspathDeserializerLocator().getInstance()
+                fail 'Located Deserializer class, whereas none was expected.'
+            } catch (Exception ex) {
+                assertEquals 'Unable to discover any JSON Deserializer implementations on the classpath.', ex.message
+            }
         }
     }
 
@@ -107,38 +99,17 @@ class RuntimeClasspathDeserializerLocatorTest {
 
     @Test
     void testOrgJson() {
-        prepareFakeServiceClassLoader()
-
-        def deserializer = new RuntimeClasspathDeserializerLocator().getInstance()
-        assertTrue deserializer instanceof OrgJsonDeserializer
+        FakeServiceDescriptorClassLoader.runWithFake TEST_SERVICE_DESCRIPTOR_ORGJSON, {
+            def deserializer = new RuntimeClasspathDeserializerLocator().getInstance()
+            assertTrue deserializer instanceof OrgJsonDeserializer
+        }
     }
 
     @Test
     void testGson() {
-        def locator = new RuntimeClasspathDeserializerLocator() {
-            @Override
-            protected boolean isAvailable(String fqcn) {
-                if (JacksonDeserializer.class.getName().equals(fqcn)) {
-                    return false; //skip it to allow the Gson impl to be created
-                }
-                if (OrgJsonDeserializer.class.getName().equals(fqcn)) {
-                    return false; //skip it to allow the Gson impl to be created
-                }
-                return super.isAvailable(fqcn)
-            }
+        FakeServiceDescriptorClassLoader.runWithFake TEST_SERVICE_DESCRIPTOR_GSON, {
+            def deserializer = new RuntimeClasspathDeserializerLocator().getInstance()
+            assertTrue deserializer instanceof GsonDeserializer
         }
-
-        def deserializer = locator.getInstance()
-        assertTrue deserializer instanceof GsonDeserializer
-    }
-
-    private void prepareNoServiceDescriptorClassLoader() {
-        originalClassLoader = Thread.currentThread().getContextClassLoader()
-        Thread.currentThread().setContextClassLoader(new NoServiceDescriptorClassLoader(originalClassLoader))
-    }
-
-    private void prepareFakeServiceClassLoader() {
-        originalClassLoader = Thread.currentThread().getContextClassLoader()
-        Thread.currentThread().setContextClassLoader(new FakeServiceDescriptorClassLoader(originalClassLoader, TEST_SERVICE_DESCRIPTOR))
     }
 }

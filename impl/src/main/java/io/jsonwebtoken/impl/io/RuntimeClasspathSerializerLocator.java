@@ -25,14 +25,14 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * @since 0.10.0
  */
-public class RuntimeClasspathSerializerLocator implements InstanceLocator<Serializer> {
+public class RuntimeClasspathSerializerLocator<T> implements InstanceLocator<Serializer<T>> {
 
-    private static final AtomicReference<Serializer<Object>> SERIALIZER = new AtomicReference<>();
+    private static final AtomicReference<Serializer> SERIALIZER = new AtomicReference<>();
 
     @SuppressWarnings("unchecked")
     @Override
-    public Serializer<Object> getInstance() {
-        Serializer<Object> serializer = SERIALIZER.get();
+    public Serializer<T> getInstance() {
+        Serializer serializer = SERIALIZER.get();
         if (serializer == null) {
             serializer = locate();
             Assert.state(serializer != null, "locate() cannot return null.");
@@ -45,18 +45,18 @@ public class RuntimeClasspathSerializerLocator implements InstanceLocator<Serial
     }
 
     @SuppressWarnings({"unchecked", "WeakerAccess"}) //to allow testing override
-    protected Serializer<Object> locate() {
+    protected Serializer<T> locate() {
         ServiceLoader<Serializer> serviceLoader = ServiceLoader.load(Serializer.class);
         Iterator<Serializer> iterator = serviceLoader.iterator();
         if(iterator.hasNext()) {
-            return  (Serializer<Object>)iterator.next();
+            return  (Serializer)iterator.next();
         } else {
             throw new IllegalStateException("Unable to discover any JSON Serializer implementations on the classpath.");
         }
     }
 
     @SuppressWarnings("WeakerAccess") //to allow testing override
-    protected boolean compareAndSet(Serializer<Object> s) {
+    protected boolean compareAndSet(Serializer s) {
         return SERIALIZER.compareAndSet(null, s);
     }
 }

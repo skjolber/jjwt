@@ -25,13 +25,13 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.impl.crypto.DefaultJwtSigner;
 import io.jsonwebtoken.impl.crypto.JwtSigner;
 import io.jsonwebtoken.impl.io.InstanceLocator;
+import io.jsonwebtoken.impl.io.RuntimeClasspathSerializerLocator;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.io.Encoder;
 import io.jsonwebtoken.io.Encoders;
 import io.jsonwebtoken.io.SerializationException;
 import io.jsonwebtoken.io.Serializer;
 import io.jsonwebtoken.lang.Assert;
-import io.jsonwebtoken.lang.Classes;
 import io.jsonwebtoken.lang.Collections;
 import io.jsonwebtoken.lang.Strings;
 import io.jsonwebtoken.security.InvalidKeyException;
@@ -296,9 +296,8 @@ public class DefaultJwtBuilder implements JwtBuilder {
 
         if (this.serializer == null) {
             //try to find one based on the runtime environment:
-            InstanceLocator<Serializer<Map<String,?>>> locator =
-                Classes.newInstance("io.jsonwebtoken.impl.io.RuntimeClasspathSerializerLocator");
-            this.serializer = locator.getInstance();
+            InstanceLocator<Serializer<Map<String,?>>> instanceLocator = new RuntimeClasspathSerializerLocator<>();
+            this.serializer = instanceLocator.getInstance();
         }
 
         if (payload == null && Collections.isEmpty(claims)) {
